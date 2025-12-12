@@ -69,6 +69,27 @@ pub struct FogEvent {
     pub timestamp_ms: u64,
 }
 
+/// Item/event acquisition event
+#[derive(Clone, Debug, Serialize)]
+pub struct ItemEvent {
+    /// Event flag ID that triggered
+    pub event_id: u32,
+    /// Item ID associated with this event (from GoodsEvents.tsv)
+    pub item_id: u32,
+    /// Item name (from GoodsEvents.tsv)
+    pub item_name: String,
+    /// Global X coordinate where item was acquired
+    pub global_x: f32,
+    /// Global Y coordinate (altitude)
+    pub global_y: f32,
+    /// Global Z coordinate
+    pub global_z: f32,
+    /// Map ID as string
+    pub map_id_str: String,
+    /// Timestamp in milliseconds from start of recording
+    pub timestamp_ms: u64,
+}
+
 /// Saved route file structure
 #[derive(Debug, Serialize)]
 pub struct SavedRoute {
@@ -88,6 +109,8 @@ pub struct SavedRoute {
     pub deaths: Vec<DeathEvent>,
     /// Fog wall traversal events
     pub fog_traversals: Vec<FogEvent>,
+    /// Item acquisition events
+    pub item_events: Vec<ItemEvent>,
 }
 
 // =============================================================================
@@ -124,6 +147,7 @@ pub fn save_route_to_file(
     route: &[RoutePoint],
     deaths: &[DeathEvent],
     fog_traversals: &[FogEvent],
+    item_events: &[ItemEvent],
     base_dir: &PathBuf,
     routes_directory: &str,
     interval_ms: u64,
@@ -131,24 +155,24 @@ pub fn save_route_to_file(
     if route.is_empty() {
         return Err("No route data to save".to_string());
     }
-    
+
     // Create routes directory
     let routes_dir = base_dir.join(routes_directory);
     if !routes_dir.exists() {
         fs::create_dir_all(&routes_dir)
             .map_err(|e| format!("Failed to create routes directory: {}", e))?;
     }
-    
+
     // Generate filename with timestamp
     let now = generate_timestamp();
     let filename = format!("route_{}.json", now.replace(":", "-").replace(" ", "_"));
     let filepath = routes_dir.join(&filename);
-    
+
     // Calculate total duration
     let duration_secs = route.last()
         .map(|p| p.timestamp_ms as f64 / 1000.0)
         .unwrap_or(0.0);
-    
+
     // Create saved route structure
     let saved_route = SavedRoute {
         name: format!("Route {}", now),
@@ -159,18 +183,19 @@ pub fn save_route_to_file(
         points: route.to_vec(),
         deaths: deaths.to_vec(),
         fog_traversals: fog_traversals.to_vec(),
+        item_events: item_events.to_vec(),
     };
-    
+
     // Serialize to JSON
     let json = serde_json::to_string_pretty(&saved_route)
         .map_err(|e| format!("Failed to serialize route: {}", e))?;
-    
+
     // Write to file
     let mut file = File::create(&filepath)
         .map_err(|e| format!("Failed to create file: {}", e))?;
     file.write_all(json.as_bytes())
         .map_err(|e| format!("Failed to write file: {}", e))?;
-    
+
     Ok(filepath)
 }
 

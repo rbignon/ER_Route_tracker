@@ -42,6 +42,7 @@ jobs:
           cp target/release/route-tracker-injector.exe dist/
           cp route_tracker_config.toml dist/
           cp src/WorldMapLegacyConvParam.csv dist/
+          cp GoodsEvents.tsv dist/
 
       - name: Upload distribution package
         uses: actions/upload-artifact@v4

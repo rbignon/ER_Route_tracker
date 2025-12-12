@@ -1,5 +1,6 @@
 // Route Tracker - Main tracking logic
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -9,8 +10,9 @@ use windows::Win32::Foundation::HINSTANCE;
 
 use crate::config::Config;
 use crate::coordinate_transformer::WorldPositionTransformer;
-use crate::custom_pointers::CustomPointers;
-use crate::route::{save_route_to_file, DeathEvent, FogEvent, RoutePoint};
+use crate::custom_pointers::{CustomPointers, EventFlagReader};
+use crate::goods_events::GoodsEventsLoader;
+use crate::route::{save_route_to_file, DeathEvent, FogEvent, ItemEvent, RoutePoint};
 
 /// Animation ID for fog wall traversal
 const FOG_WALL_ANIM_ID: u32 = 60060;
@@ -23,11 +25,15 @@ const FOG_WALL_ANIM_ID: u32 = 60060;
 pub struct RouteTracker {
     pub(crate) pointers: Pointers,
     pub(crate) custom_pointers: CustomPointers,
+    pub(crate) event_flag_reader: EventFlagReader,
+    pub(crate) goods_events: GoodsEventsLoader,
     pub(crate) route: Vec<RoutePoint>,
     pub(crate) deaths: Vec<DeathEvent>,
     pub(crate) fog_traversals: Vec<FogEvent>,
+    pub(crate) item_events: Vec<ItemEvent>,
     pub(crate) last_death_count: Option<u32>,
     pub(crate) last_anim: Option<u32>,
+    pub(crate) last_flag_states: HashMap<u32, bool>,
     pub(crate) is_recording: bool,
     pub(crate) start_time: Option<Instant>,
     pub(crate) last_record_time: Instant,
@@ -89,6 +95,21 @@ impl RouteTracker {
         
         let pointers = Pointers::new();
         let custom_pointers = CustomPointers::new(&pointers.base_addresses);
+        let event_flag_reader = EventFlagReader::new(&pointers.base_addresses);
+
+        // Load goods events data for item tracking
+        let goods_events_path = base_dir.join("GoodsEvents.tsv");
+        let goods_events = match GoodsEventsLoader::from_tsv(&goods_events_path) {
+            Ok(ge) => {
+                info!("Loaded {} goods events for tracking", ge.len());
+                ge
+            }
+            Err(e) => {
+                warn!("Failed to load GoodsEvents.tsv from {:?}: {}. \
+                       Item tracking disabled.", goods_events_path, e);
+                GoodsEventsLoader::empty()
+            }
+        };
 
         // Wait for the game to be loaded
         let poll_interval = Duration::from_millis(100);
@@ -100,22 +121,26 @@ impl RouteTracker {
             }
             std::thread::sleep(poll_interval);
         }
-        
+
         info!("Route Tracker initialized!");
-        
+
         let record_interval = Duration::from_millis(config.recording.record_interval_ms);
-        
+
         // Read initial death count
         let last_death_count = custom_pointers.read_death_count();
 
         Some(Self {
             pointers,
             custom_pointers,
+            event_flag_reader,
+            goods_events,
             route: Vec::new(),
             deaths: Vec::new(),
             fog_traversals: Vec::new(),
+            item_events: Vec::new(),
             last_death_count,
             last_anim: None,
+            last_flag_states: HashMap::new(),
             is_recording: false,
             start_time: None,
             last_record_time: Instant::now(),
@@ -133,8 +158,19 @@ impl RouteTracker {
         self.route.clear();
         self.deaths.clear();
         self.fog_traversals.clear();
+        self.item_events.clear();
         self.last_death_count = self.custom_pointers.read_death_count();
         self.last_anim = self.pointers.cur_anim.read();
+
+        // Snapshot current state of all tracked event flags
+        self.last_flag_states.clear();
+        for &event_id in self.goods_events.event_ids() {
+            if let Some(state) = self.event_flag_reader.read_flag(event_id) {
+                self.last_flag_states.insert(event_id, state);
+            }
+        }
+        info!("Snapshotted {} event flags", self.last_flag_states.len());
+
         self.start_time = Some(Instant::now());
         self.is_recording = true;
         info!("Recording started!");
@@ -208,6 +244,10 @@ impl RouteTracker {
             }
             self.last_anim = current_anim;
 
+            // Detect item acquisitions via event flag changes
+            // Only check a subset of flags each frame to avoid performance issues
+            self.check_event_flags(global_x, global_y, global_z, &map_id_str, timestamp_ms);
+
             self.route.push(RoutePoint {
                 x,
                 y,
@@ -225,22 +265,64 @@ impl RouteTracker {
             self.last_record_time = Instant::now();
         }
     }
-    
+
+    /// Check all tracked event flags for changes and record item events
+    fn check_event_flags(
+        &mut self,
+        global_x: f32,
+        global_y: f32,
+        global_z: f32,
+        map_id_str: &str,
+        timestamp_ms: u64,
+    ) {
+        // Check all tracked event flags
+        for &event_id in self.goods_events.event_ids() {
+            if let Some(current_state) = self.event_flag_reader.read_flag(event_id) {
+                let last_state = self.last_flag_states.get(&event_id).copied().unwrap_or(false);
+
+                // Detect flag becoming true (item acquired)
+                if current_state && !last_state {
+                    if let Some(event_info) = self.goods_events.get(event_id) {
+                        info!(
+                            "Item acquired: {} (event {}, item {}) at ({}, {}, {})",
+                            event_info.name, event_id, event_info.item_id,
+                            global_x, global_y, global_z
+                        );
+                        self.item_events.push(ItemEvent {
+                            event_id,
+                            item_id: event_info.item_id,
+                            item_name: event_info.name.clone(),
+                            global_x,
+                            global_y,
+                            global_z,
+                            map_id_str: map_id_str.to_string(),
+                            timestamp_ms,
+                        });
+                    }
+                }
+
+                // Update last known state
+                self.last_flag_states.insert(event_id, current_state);
+            }
+        }
+    }
+
     /// Save the recorded route to a JSON file
     pub fn save_route(&self) -> Result<PathBuf, String> {
         let result = save_route_to_file(
             &self.route,
             &self.deaths,
             &self.fog_traversals,
+            &self.item_events,
             &self.base_dir,
             &self.config.output.routes_directory,
             self.config.recording.record_interval_ms,
         );
-        
+
         if let Ok(ref path) = result {
             info!("Route saved to: {}", path.display());
         }
-        
+
         result
     }
     

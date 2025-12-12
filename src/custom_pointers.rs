@@ -2,11 +2,15 @@
 //
 // These pointers were reverse-engineered from Cheat Engine tables
 // (eldenring_all-in-one_Hexinton-v5.0_ce7.5.ct)
+// Event flag structure from EldenRingTool (thanks nord!)
 
 use libeldenring::memedit::PointerChain;
 use libeldenring::prelude::base_addresses::{BaseAddresses, Version};
 use libeldenring::version::get_version;
 use serde::Serialize;
+use windows::Win32::Foundation::HANDLE;
+use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+use windows::Win32::System::Threading::GetCurrentProcess;
 
 /// Debug info for Torrent/riding state - used to identify which values change
 #[derive(Debug, Clone, Serialize, Default)]
@@ -99,5 +103,224 @@ impl CustomPointers {
     /// Read the current death count
     pub fn read_death_count(&self) -> Option<u32> {
         self.death_count.read()
+    }
+}
+
+// =============================================================================
+// EVENT FLAG READER
+// =============================================================================
+
+/// Offsets within CSFD4VirtualMemoryFlag structure
+#[repr(usize)]
+enum VirtualMemoryFlagOffset {
+    EventFlagDivisor = 0x1C,
+    FlagHolderEntrySize = 0x20,
+    FlagHolder = 0x28,
+    FlagGroupRootNode = 0x38,
+}
+
+/// Offsets within EventFlagGroupNode structure (tree node)
+#[repr(usize)]
+enum FlagGroupNodeOffset {
+    Left = 0x0,
+    Parent = 0x8,
+    Right = 0x10,
+    IsLeaf = 0x19,
+    Group = 0x20,
+    LocationMode = 0x28,
+    Location = 0x30,
+}
+
+/// Reader for game event flags using the CSEventFlagMan structure
+pub struct EventFlagReader {
+    proc: HANDLE,
+    csfd4_virtual_memory_flag: usize,
+}
+
+impl EventFlagReader {
+    /// Create a new EventFlagReader
+    pub fn new(base_addresses: &BaseAddresses) -> Self {
+        Self {
+            proc: unsafe { GetCurrentProcess() },
+            csfd4_virtual_memory_flag: base_addresses.csfd4_virtual_memory_flag,
+        }
+    }
+
+    /// Read a u8 from the given address
+    fn read_u8(&self, addr: usize) -> Option<u8> {
+        let mut value: u8 = 0;
+        unsafe {
+            ReadProcessMemory(
+                self.proc,
+                addr as _,
+                &mut value as *mut _ as _,
+                std::mem::size_of::<u8>(),
+                None,
+            )
+            .ok()
+            .map(|_| value)
+        }
+    }
+
+    /// Read a u32 from the given address
+    fn read_u32(&self, addr: usize) -> Option<u32> {
+        let mut value: u32 = 0;
+        unsafe {
+            ReadProcessMemory(
+                self.proc,
+                addr as _,
+                &mut value as *mut _ as _,
+                std::mem::size_of::<u32>(),
+                None,
+            )
+            .ok()
+            .map(|_| value)
+        }
+    }
+
+    /// Read a i32 from the given address
+    fn read_i32(&self, addr: usize) -> Option<i32> {
+        let mut value: i32 = 0;
+        unsafe {
+            ReadProcessMemory(
+                self.proc,
+                addr as _,
+                &mut value as *mut _ as _,
+                std::mem::size_of::<i32>(),
+                None,
+            )
+            .ok()
+            .map(|_| value)
+        }
+    }
+
+    /// Read a u64 (pointer) from the given address
+    fn read_u64(&self, addr: usize) -> Option<u64> {
+        let mut value: u64 = 0;
+        unsafe {
+            ReadProcessMemory(
+                self.proc,
+                addr as _,
+                &mut value as *mut _ as _,
+                std::mem::size_of::<u64>(),
+                None,
+            )
+            .ok()
+            .map(|_| value)
+        }
+    }
+
+    /// Read a pointer (following the chain from base address)
+    fn read_ptr(&self, addr: usize) -> Option<usize> {
+        self.read_u64(addr).map(|v| v as usize)
+    }
+
+    /// Navigate the event flag tree to find the memory location and bit for a flag
+    /// Returns (address, bit_offset) or None if not found
+    fn get_flag_location(&self, flag_id: u32) -> Option<(usize, u32)> {
+        // Read the base event flag manager pointer
+        let evt_flag_man = self.read_ptr(self.csfd4_virtual_memory_flag)?;
+        if evt_flag_man == 0 {
+            return None;
+        }
+
+        // Read divisor (should be 1000)
+        let divisor = self.read_i32(evt_flag_man + VirtualMemoryFlagOffset::EventFlagDivisor as usize)?;
+        if divisor == 0 {
+            return None;
+        }
+
+        // Read entry size (usually ~125)
+        let entry_size = self.read_i32(evt_flag_man + VirtualMemoryFlagOffset::FlagHolderEntrySize as usize)?;
+        if entry_size == 0 {
+            return None;
+        }
+
+        // Calculate group number and bit offset within group
+        let group_num = flag_id as i32 / divisor;
+        let bit_num_full = flag_id % divisor as u32;
+
+        // Get the tree root node
+        let root = self.read_ptr(evt_flag_man + VirtualMemoryFlagOffset::FlagGroupRootNode as usize)?;
+        if root == 0 {
+            return None;
+        }
+
+        // Start from root's parent (this is how the tree is structured)
+        let parent = self.read_ptr(root + FlagGroupNodeOffset::Parent as usize)?;
+        let mut current = parent;
+        let mut is_leaf = self.read_u8(current + FlagGroupNodeOffset::IsLeaf as usize)? != 0;
+        let mut found = root;
+
+        // Walk the tree to find the correct group
+        let mut walk_count = 0;
+        while !is_leaf {
+            walk_count += 1;
+            if walk_count > 1000 {
+                return None; // Prevent infinite loops
+            }
+
+            let current_group = self.read_i32(current + FlagGroupNodeOffset::Group as usize)?;
+            let next = if current_group < group_num {
+                let right = self.read_ptr(current + FlagGroupNodeOffset::Right as usize)?;
+                found = current;
+                right
+            } else {
+                self.read_ptr(current + FlagGroupNodeOffset::Left as usize)?
+            };
+
+            if next == 0 {
+                return None;
+            }
+
+            found = current;
+            current = next;
+            is_leaf = self.read_u8(next + FlagGroupNodeOffset::IsLeaf as usize)? != 0;
+        }
+
+        // Check if we found a valid node
+        let found_group = self.read_i32(found + FlagGroupNodeOffset::Group as usize)?;
+        if found == root || group_num < found_group {
+            return None;
+        }
+
+        // Get the location mode and calculate the actual address
+        let loc_mode = self.read_i32(found + FlagGroupNodeOffset::LocationMode as usize)?;
+
+        let ptr = match loc_mode {
+            2 => {
+                // Direct pointer mode
+                self.read_ptr(found + FlagGroupNodeOffset::Location as usize)?
+            }
+            1 => {
+                // Flag holder index mode
+                let flag_holder = self.read_ptr(evt_flag_man + VirtualMemoryFlagOffset::FlagHolder as usize)?;
+                let loc = self.read_i32(found + FlagGroupNodeOffset::Location as usize)?;
+                let loc_offset = loc as usize * entry_size as usize;
+                flag_holder + loc_offset
+            }
+            _ => return None, // Unknown location mode
+        };
+
+        Some((ptr, bit_num_full))
+    }
+
+    /// Read the value of an event flag
+    /// Returns Some(true) if flag is set, Some(false) if not set, None if read failed
+    pub fn read_flag(&self, flag_id: u32) -> Option<bool> {
+        let (ptr, bit_num_full) = self.get_flag_location(flag_id)?;
+
+        let byte_num = bit_num_full / 8;
+        let bit_num = 7 - (bit_num_full % 8); // Big-endian bit order
+        let flag_mask = 1u8 << bit_num;
+
+        let flag_byte = self.read_u8(ptr + byte_num as usize)?;
+        Some((flag_byte & flag_mask) == flag_mask)
+    }
+
+    /// Check if the event flag system is ready (game loaded)
+    pub fn is_ready(&self) -> bool {
+        // Try to read a known flag (flag 2200 is used as a loading indicator)
+        self.get_flag_location(2200).is_some()
     }
 }

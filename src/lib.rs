@@ -25,6 +25,7 @@
 mod config;
 mod coordinate_transformer;
 mod custom_pointers;
+mod goods_events;
 mod route;
 mod tracker;
 mod ui;
