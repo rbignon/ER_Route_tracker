@@ -231,38 +231,43 @@ impl RouteTracker {
             self.last_death_count = current_death_count;
 
             // Detect fog wall traversal: track entry and exit positions
+            // Note: During fog traversal (especially with mods), game data may become
+            // temporarily invalid (position=0,0,0, map_id=0xFFFFFFFF, cur_anim=null).
+            // We detect exit when valid data returns after entering fog.
             let current_anim = self.pointers.cur_anim.read();
-            if let Some(anim) = current_anim {
-                let was_fog = self.last_anim.map(|a| a == FOG_WALL_ANIM_ID).unwrap_or(false);
-                let is_fog = anim == FOG_WALL_ANIM_ID;
+            let is_fog = current_anim.map(|a| a == FOG_WALL_ANIM_ID).unwrap_or(false);
+            let was_fog = self.last_anim.map(|a| a == FOG_WALL_ANIM_ID).unwrap_or(false);
 
-                if is_fog && !was_fog {
-                    // Animation just started - record entry position
-                    info!("Fog wall entry at ({}, {}, {}) [{}]", global_x, global_y, global_z, map_id_str);
-                    self.pending_fog = Some(PendingFogEvent {
-                        entry_x: global_x,
-                        entry_y: global_y,
-                        entry_z: global_z,
-                        entry_map_id_str: map_id_str.clone(),
-                        entry_timestamp_ms: timestamp_ms,
+            // Check if position data is valid (not during loading screen)
+            let is_valid_position = map_id != 0xFFFFFFFF && (x != 0.0 || y != 0.0 || z != 0.0);
+
+            if is_fog && !was_fog && is_valid_position {
+                // Animation just started - record entry position
+                info!("Fog wall entry at ({}, {}, {}) [{}]", global_x, global_y, global_z, map_id_str);
+                self.pending_fog = Some(PendingFogEvent {
+                    entry_x: global_x,
+                    entry_y: global_y,
+                    entry_z: global_z,
+                    entry_map_id_str: map_id_str.clone(),
+                    entry_timestamp_ms: timestamp_ms,
+                });
+            } else if self.pending_fog.is_some() && !is_fog && is_valid_position {
+                // We had a pending fog entry AND animation is no longer fog AND position is valid
+                // This handles both normal exit and fog randomizer (where data goes invalid then valid)
+                if let Some(pending) = self.pending_fog.take() {
+                    info!("Fog wall exit at ({}, {}, {}) [{}]", global_x, global_y, global_z, map_id_str);
+                    self.fog_traversals.push(FogEvent {
+                        entry_x: pending.entry_x,
+                        entry_y: pending.entry_y,
+                        entry_z: pending.entry_z,
+                        entry_map_id_str: pending.entry_map_id_str,
+                        exit_x: global_x,
+                        exit_y: global_y,
+                        exit_z: global_z,
+                        exit_map_id_str: map_id_str.clone(),
+                        entry_timestamp_ms: pending.entry_timestamp_ms,
+                        exit_timestamp_ms: timestamp_ms,
                     });
-                } else if !is_fog && was_fog {
-                    // Animation just ended - record exit position and complete the event
-                    if let Some(pending) = self.pending_fog.take() {
-                        info!("Fog wall exit at ({}, {}, {}) [{}]", global_x, global_y, global_z, map_id_str);
-                        self.fog_traversals.push(FogEvent {
-                            entry_x: pending.entry_x,
-                            entry_y: pending.entry_y,
-                            entry_z: pending.entry_z,
-                            entry_map_id_str: pending.entry_map_id_str,
-                            exit_x: global_x,
-                            exit_y: global_y,
-                            exit_z: global_z,
-                            exit_map_id_str: map_id_str.clone(),
-                            entry_timestamp_ms: pending.entry_timestamp_ms,
-                            exit_timestamp_ms: timestamp_ms,
-                        });
-                    }
                 }
             }
             self.last_anim = current_anim;
