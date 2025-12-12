@@ -10,7 +10,7 @@ use windows::Win32::Foundation::HINSTANCE;
 use crate::config::Config;
 use crate::coordinate_transformer::WorldPositionTransformer;
 use crate::custom_pointers::CustomPointers;
-use crate::route::{save_route_to_file, RoutePoint};
+use crate::route::{save_route_to_file, DeathEvent, RoutePoint};
 
 // =============================================================================
 // ROUTE TRACKER
@@ -21,6 +21,8 @@ pub struct RouteTracker {
     pub(crate) pointers: Pointers,
     pub(crate) custom_pointers: CustomPointers,
     pub(crate) route: Vec<RoutePoint>,
+    pub(crate) deaths: Vec<DeathEvent>,
+    pub(crate) last_death_count: Option<u32>,
     pub(crate) is_recording: bool,
     pub(crate) start_time: Option<Instant>,
     pub(crate) last_record_time: Instant,
@@ -98,10 +100,15 @@ impl RouteTracker {
         
         let record_interval = Duration::from_millis(config.recording.record_interval_ms);
         
+        // Read initial death count
+        let last_death_count = custom_pointers.read_death_count();
+
         Some(Self {
             pointers,
             custom_pointers,
             route: Vec::new(),
+            deaths: Vec::new(),
+            last_death_count,
             is_recording: false,
             start_time: None,
             last_record_time: Instant::now(),
@@ -117,6 +124,8 @@ impl RouteTracker {
     /// Start recording
     pub fn start_recording(&mut self) {
         self.route.clear();
+        self.deaths.clear();
+        self.last_death_count = self.custom_pointers.read_death_count();
         self.start_time = Some(Instant::now());
         self.is_recording = true;
         info!("Recording started!");
@@ -157,6 +166,22 @@ impl RouteTracker {
             let torrent_debug = self.custom_pointers.read_torrent_debug();
             let on_torrent = torrent_debug.horse_state.map(|v| v != 0).unwrap_or(false);
 
+            // Detect death: if death_count increased, record death at current position
+            let current_death_count = self.custom_pointers.read_death_count();
+            if let (Some(current), Some(last)) = (current_death_count, self.last_death_count) {
+                if current > last {
+                    info!("Death detected! Recording death at ({}, {}, {})", global_x, global_y, global_z);
+                    self.deaths.push(DeathEvent {
+                        global_x,
+                        global_y,
+                        global_z,
+                        map_id_str: map_id_str.clone(),
+                        timestamp_ms,
+                    });
+                }
+            }
+            self.last_death_count = current_death_count;
+
             self.route.push(RoutePoint {
                 x,
                 y,
@@ -179,6 +204,7 @@ impl RouteTracker {
     pub fn save_route(&self) -> Result<PathBuf, String> {
         let result = save_route_to_file(
             &self.route,
+            &self.deaths,
             &self.base_dir,
             &self.config.output.routes_directory,
             self.config.recording.record_interval_ms,

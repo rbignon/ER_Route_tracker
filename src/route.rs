@@ -39,6 +39,21 @@ pub struct RoutePoint {
     pub torrent_debug: TorrentDebugInfo,
 }
 
+/// Death event with position
+#[derive(Clone, Debug, Serialize)]
+pub struct DeathEvent {
+    /// Global X coordinate where death occurred
+    pub global_x: f32,
+    /// Global Y coordinate (altitude)
+    pub global_y: f32,
+    /// Global Z coordinate
+    pub global_z: f32,
+    /// Map ID as string
+    pub map_id_str: String,
+    /// Timestamp in milliseconds from start of recording
+    pub timestamp_ms: u64,
+}
+
 /// Saved route file structure
 #[derive(Debug, Serialize)]
 pub struct SavedRoute {
@@ -54,6 +69,8 @@ pub struct SavedRoute {
     pub point_count: usize,
     /// The route points
     pub points: Vec<RoutePoint>,
+    /// Death events during the recording
+    pub deaths: Vec<DeathEvent>,
 }
 
 // =============================================================================
@@ -88,6 +105,7 @@ pub fn generate_timestamp() -> String {
 /// Save a route to a JSON file
 pub fn save_route_to_file(
     route: &[RoutePoint],
+    deaths: &[DeathEvent],
     base_dir: &PathBuf,
     routes_directory: &str,
     interval_ms: u64,
@@ -121,6 +139,7 @@ pub fn save_route_to_file(
         interval_ms,
         point_count: route.len(),
         points: route.to_vec(),
+        deaths: deaths.to_vec(),
     };
     
     // Serialize to JSON

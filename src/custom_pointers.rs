@@ -38,6 +38,8 @@ pub struct CustomPointers {
     horse_state: PointerChain<i32>,
     horse_hp: PointerChain<i32>,
     is_inside_no_ride_area: PointerChain<u8>,
+    // Death counter (GameDataMan + 0x94)
+    death_count: PointerChain<u32>,
 }
 
 impl CustomPointers {
@@ -70,6 +72,8 @@ impl CustomPointers {
             horse_hp: PointerChain::new(&[world_chr_man, player_ins, 0x190, 0xE8, 0x12C]),
             // +0x190 +0xE8 +0x164
             is_inside_no_ride_area: PointerChain::new(&[world_chr_man, player_ins, 0x190, 0xE8, 0x164]),
+            // GameDataMan + 0x94
+            death_count: PointerChain::new(&[base_addresses.game_data_man, 0x94]),
         }
     }
 
@@ -90,5 +94,10 @@ impl CustomPointers {
     /// Uses "HorseState" - returns true if value != 0
     pub fn is_on_torrent(&self) -> bool {
         self.horse_state.read().map(|v| v != 0).unwrap_or(false)
+    }
+
+    /// Read the current death count
+    pub fn read_death_count(&self) -> Option<u32> {
+        self.death_count.read()
     }
 }
