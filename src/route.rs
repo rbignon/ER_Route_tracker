@@ -54,6 +54,21 @@ pub struct DeathEvent {
     pub timestamp_ms: u64,
 }
 
+/// Fog wall traversal event
+#[derive(Clone, Debug, Serialize)]
+pub struct FogEvent {
+    /// Global X coordinate where fog was entered
+    pub global_x: f32,
+    /// Global Y coordinate (altitude)
+    pub global_y: f32,
+    /// Global Z coordinate
+    pub global_z: f32,
+    /// Map ID as string
+    pub map_id_str: String,
+    /// Timestamp in milliseconds from start of recording
+    pub timestamp_ms: u64,
+}
+
 /// Saved route file structure
 #[derive(Debug, Serialize)]
 pub struct SavedRoute {
@@ -71,6 +86,8 @@ pub struct SavedRoute {
     pub points: Vec<RoutePoint>,
     /// Death events during the recording
     pub deaths: Vec<DeathEvent>,
+    /// Fog wall traversal events
+    pub fog_traversals: Vec<FogEvent>,
 }
 
 // =============================================================================
@@ -106,6 +123,7 @@ pub fn generate_timestamp() -> String {
 pub fn save_route_to_file(
     route: &[RoutePoint],
     deaths: &[DeathEvent],
+    fog_traversals: &[FogEvent],
     base_dir: &PathBuf,
     routes_directory: &str,
     interval_ms: u64,
@@ -140,6 +158,7 @@ pub fn save_route_to_file(
         point_count: route.len(),
         points: route.to_vec(),
         deaths: deaths.to_vec(),
+        fog_traversals: fog_traversals.to_vec(),
     };
     
     // Serialize to JSON

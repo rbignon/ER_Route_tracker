@@ -10,7 +10,10 @@ use windows::Win32::Foundation::HINSTANCE;
 use crate::config::Config;
 use crate::coordinate_transformer::WorldPositionTransformer;
 use crate::custom_pointers::CustomPointers;
-use crate::route::{save_route_to_file, DeathEvent, RoutePoint};
+use crate::route::{save_route_to_file, DeathEvent, FogEvent, RoutePoint};
+
+/// Animation ID for fog wall traversal
+const FOG_WALL_ANIM_ID: u32 = 60060;
 
 // =============================================================================
 // ROUTE TRACKER
@@ -22,7 +25,9 @@ pub struct RouteTracker {
     pub(crate) custom_pointers: CustomPointers,
     pub(crate) route: Vec<RoutePoint>,
     pub(crate) deaths: Vec<DeathEvent>,
+    pub(crate) fog_traversals: Vec<FogEvent>,
     pub(crate) last_death_count: Option<u32>,
+    pub(crate) last_anim: Option<u32>,
     pub(crate) is_recording: bool,
     pub(crate) start_time: Option<Instant>,
     pub(crate) last_record_time: Instant,
@@ -108,7 +113,9 @@ impl RouteTracker {
             custom_pointers,
             route: Vec::new(),
             deaths: Vec::new(),
+            fog_traversals: Vec::new(),
             last_death_count,
+            last_anim: None,
             is_recording: false,
             start_time: None,
             last_record_time: Instant::now(),
@@ -125,7 +132,9 @@ impl RouteTracker {
     pub fn start_recording(&mut self) {
         self.route.clear();
         self.deaths.clear();
+        self.fog_traversals.clear();
         self.last_death_count = self.custom_pointers.read_death_count();
+        self.last_anim = self.pointers.cur_anim.read();
         self.start_time = Some(Instant::now());
         self.is_recording = true;
         info!("Recording started!");
@@ -182,6 +191,23 @@ impl RouteTracker {
             }
             self.last_death_count = current_death_count;
 
+            // Detect fog wall traversal: when animation becomes FOG_WALL_ANIM_ID
+            let current_anim = self.pointers.cur_anim.read();
+            if let Some(anim) = current_anim {
+                let was_fog = self.last_anim.map(|a| a == FOG_WALL_ANIM_ID).unwrap_or(false);
+                if anim == FOG_WALL_ANIM_ID && !was_fog {
+                    info!("Fog wall traversal detected at ({}, {}, {})", global_x, global_y, global_z);
+                    self.fog_traversals.push(FogEvent {
+                        global_x,
+                        global_y,
+                        global_z,
+                        map_id_str: map_id_str.clone(),
+                        timestamp_ms,
+                    });
+                }
+            }
+            self.last_anim = current_anim;
+
             self.route.push(RoutePoint {
                 x,
                 y,
@@ -205,6 +231,7 @@ impl RouteTracker {
         let result = save_route_to_file(
             &self.route,
             &self.deaths,
+            &self.fog_traversals,
             &self.base_dir,
             &self.config.output.routes_directory,
             self.config.recording.record_interval_ms,
