@@ -6,6 +6,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use crate::custom_pointers::TorrentDebugInfo;
+
 // =============================================================================
 // DATA STRUCTURES
 // =============================================================================
@@ -33,6 +35,8 @@ pub struct RoutePoint {
     pub timestamp_ms: u64,
     /// Whether the player is riding Torrent
     pub on_torrent: bool,
+    /// Debug info for Torrent/riding state (to identify which values change)
+    pub torrent_debug: TorrentDebugInfo,
 }
 
 /// Saved route file structure

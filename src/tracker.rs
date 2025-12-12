@@ -153,8 +153,9 @@ impl RouteTracker {
 
             let map_id_str = WorldPositionTransformer::format_map_id(map_id);
 
-            // Detect if player is riding Torrent
-            let on_torrent = self.custom_pointers.is_on_torrent();
+            // Detect if player is riding Torrent and get debug info
+            let torrent_debug = self.custom_pointers.read_torrent_debug();
+            let on_torrent = torrent_debug.riding.map(|v| v != 0).unwrap_or(false);
 
             self.route.push(RoutePoint {
                 x,
@@ -167,6 +168,7 @@ impl RouteTracker {
                 map_id_str,
                 timestamp_ms,
                 on_torrent,
+                torrent_debug,
             });
 
             self.last_record_time = Instant::now();
