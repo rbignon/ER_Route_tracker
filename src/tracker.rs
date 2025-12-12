@@ -9,6 +9,7 @@ use windows::Win32::Foundation::HINSTANCE;
 
 use crate::config::Config;
 use crate::coordinate_transformer::WorldPositionTransformer;
+use crate::custom_pointers::CustomPointers;
 use crate::route::{save_route_to_file, RoutePoint};
 
 // =============================================================================
@@ -18,6 +19,7 @@ use crate::route::{save_route_to_file, RoutePoint};
 /// Route tracking state
 pub struct RouteTracker {
     pub(crate) pointers: Pointers,
+    pub(crate) custom_pointers: CustomPointers,
     pub(crate) route: Vec<RoutePoint>,
     pub(crate) is_recording: bool,
     pub(crate) start_time: Option<Instant>,
@@ -79,7 +81,8 @@ impl RouteTracker {
         };
         
         let pointers = Pointers::new();
-        
+        let custom_pointers = CustomPointers::new(&pointers.base_addresses);
+
         // Wait for the game to be loaded
         let poll_interval = Duration::from_millis(100);
         loop {
@@ -97,6 +100,7 @@ impl RouteTracker {
         
         Some(Self {
             pointers,
+            custom_pointers,
             route: Vec::new(),
             is_recording: false,
             start_time: None,
@@ -149,8 +153,8 @@ impl RouteTracker {
 
             let map_id_str = WorldPositionTransformer::format_map_id(map_id);
 
-            // Detect if player is riding Torrent (Torrent is spawned = player is mounted)
-            let on_torrent = self.pointers.torrent_chunk_position.read().is_some();
+            // Detect if player is riding Torrent
+            let on_torrent = self.custom_pointers.is_on_torrent();
 
             self.route.push(RoutePoint {
                 x,

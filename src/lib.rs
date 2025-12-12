@@ -24,6 +24,7 @@
 
 mod config;
 mod coordinate_transformer;
+mod custom_pointers;
 mod route;
 mod tracker;
 mod ui;
