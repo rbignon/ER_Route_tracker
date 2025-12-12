@@ -12,7 +12,7 @@ use crate::config::Config;
 use crate::coordinate_transformer::WorldPositionTransformer;
 use crate::custom_pointers::{CustomPointers, EventFlagReader};
 use crate::goods_events::GoodsEventsLoader;
-use crate::route::{save_route_to_file, DeathEvent, FogEvent, ItemEvent, RoutePoint};
+use crate::route::{save_route_to_file, DeathEvent, FogEvent, ItemEvent, PendingFogEvent, RoutePoint};
 
 /// Animation ID for fog wall traversal
 const FOG_WALL_ANIM_ID: u32 = 60060;
@@ -33,6 +33,7 @@ pub struct RouteTracker {
     pub(crate) item_events: Vec<ItemEvent>,
     pub(crate) last_death_count: Option<u32>,
     pub(crate) last_anim: Option<u32>,
+    pub(crate) pending_fog: Option<PendingFogEvent>,
     pub(crate) last_flag_states: HashMap<u32, bool>,
     pub(crate) is_recording: bool,
     pub(crate) start_time: Option<Instant>,
@@ -140,6 +141,7 @@ impl RouteTracker {
             item_events: Vec::new(),
             last_death_count,
             last_anim: None,
+            pending_fog: None,
             last_flag_states: HashMap::new(),
             is_recording: false,
             start_time: None,
@@ -159,6 +161,7 @@ impl RouteTracker {
         self.deaths.clear();
         self.fog_traversals.clear();
         self.item_events.clear();
+        self.pending_fog = None;
         self.last_death_count = self.custom_pointers.read_death_count();
         self.last_anim = self.pointers.cur_anim.read();
 
@@ -227,19 +230,39 @@ impl RouteTracker {
             }
             self.last_death_count = current_death_count;
 
-            // Detect fog wall traversal: when animation becomes FOG_WALL_ANIM_ID
+            // Detect fog wall traversal: track entry and exit positions
             let current_anim = self.pointers.cur_anim.read();
             if let Some(anim) = current_anim {
                 let was_fog = self.last_anim.map(|a| a == FOG_WALL_ANIM_ID).unwrap_or(false);
-                if anim == FOG_WALL_ANIM_ID && !was_fog {
-                    info!("Fog wall traversal detected at ({}, {}, {})", global_x, global_y, global_z);
-                    self.fog_traversals.push(FogEvent {
-                        global_x,
-                        global_y,
-                        global_z,
-                        map_id_str: map_id_str.clone(),
-                        timestamp_ms,
+                let is_fog = anim == FOG_WALL_ANIM_ID;
+
+                if is_fog && !was_fog {
+                    // Animation just started - record entry position
+                    info!("Fog wall entry at ({}, {}, {}) [{}]", global_x, global_y, global_z, map_id_str);
+                    self.pending_fog = Some(PendingFogEvent {
+                        entry_x: global_x,
+                        entry_y: global_y,
+                        entry_z: global_z,
+                        entry_map_id_str: map_id_str.clone(),
+                        entry_timestamp_ms: timestamp_ms,
                     });
+                } else if !is_fog && was_fog {
+                    // Animation just ended - record exit position and complete the event
+                    if let Some(pending) = self.pending_fog.take() {
+                        info!("Fog wall exit at ({}, {}, {}) [{}]", global_x, global_y, global_z, map_id_str);
+                        self.fog_traversals.push(FogEvent {
+                            entry_x: pending.entry_x,
+                            entry_y: pending.entry_y,
+                            entry_z: pending.entry_z,
+                            entry_map_id_str: pending.entry_map_id_str,
+                            exit_x: global_x,
+                            exit_y: global_y,
+                            exit_z: global_z,
+                            exit_map_id_str: map_id_str.clone(),
+                            entry_timestamp_ms: pending.entry_timestamp_ms,
+                            exit_timestamp_ms: timestamp_ms,
+                        });
+                    }
                 }
             }
             self.last_anim = current_anim;

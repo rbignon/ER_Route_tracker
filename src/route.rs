@@ -54,19 +54,39 @@ pub struct DeathEvent {
     pub timestamp_ms: u64,
 }
 
-/// Fog wall traversal event
+/// Fog wall traversal event with entry and exit positions
 #[derive(Clone, Debug, Serialize)]
 pub struct FogEvent {
-    /// Global X coordinate where fog was entered
-    pub global_x: f32,
-    /// Global Y coordinate (altitude)
-    pub global_y: f32,
-    /// Global Z coordinate
-    pub global_z: f32,
-    /// Map ID as string
-    pub map_id_str: String,
-    /// Timestamp in milliseconds from start of recording
-    pub timestamp_ms: u64,
+    /// Entry position - Global X coordinate before entering fog
+    pub entry_x: f32,
+    /// Entry position - Global Y coordinate (altitude)
+    pub entry_y: f32,
+    /// Entry position - Global Z coordinate
+    pub entry_z: f32,
+    /// Entry position - Map ID as string
+    pub entry_map_id_str: String,
+    /// Exit position - Global X coordinate after exiting fog
+    pub exit_x: f32,
+    /// Exit position - Global Y coordinate (altitude)
+    pub exit_y: f32,
+    /// Exit position - Global Z coordinate
+    pub exit_z: f32,
+    /// Exit position - Map ID as string
+    pub exit_map_id_str: String,
+    /// Timestamp when entering fog (milliseconds from start of recording)
+    pub entry_timestamp_ms: u64,
+    /// Timestamp when exiting fog (milliseconds from start of recording)
+    pub exit_timestamp_ms: u64,
+}
+
+/// Pending fog event (entry recorded, waiting for exit)
+#[derive(Clone, Debug)]
+pub struct PendingFogEvent {
+    pub entry_x: f32,
+    pub entry_y: f32,
+    pub entry_z: f32,
+    pub entry_map_id_str: String,
+    pub entry_timestamp_ms: u64,
 }
 
 /// Item/event acquisition event
