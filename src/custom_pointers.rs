@@ -87,8 +87,8 @@ impl CustomPointers {
     }
 
     /// Returns true if the player is currently riding Torrent
-    /// Uses the "Riding" byte - returns true if value != 0
+    /// Uses "HorseState" - returns true if value != 0
     pub fn is_on_torrent(&self) -> bool {
-        self.riding.read().map(|v| v != 0).unwrap_or(false)
+        self.horse_state.read().map(|v| v != 0).unwrap_or(false)
     }
 }

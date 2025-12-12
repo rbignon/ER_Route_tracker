@@ -155,7 +155,7 @@ impl RouteTracker {
 
             // Detect if player is riding Torrent and get debug info
             let torrent_debug = self.custom_pointers.read_torrent_debug();
-            let on_torrent = torrent_debug.riding.map(|v| v != 0).unwrap_or(false);
+            let on_torrent = torrent_debug.horse_state.map(|v| v != 0).unwrap_or(false);
 
             self.route.push(RoutePoint {
                 x,
