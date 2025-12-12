@@ -35,16 +35,17 @@ jobs:
       - name: Build release
         run: cargo build --release
 
-      - name: Upload DLL artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: route_tracking.dll
-          path: target/release/route_tracking.dll
-          if-no-files-found: error
+      - name: Prepare distribution package
+        run: |
+          mkdir dist
+          cp target/release/route_tracking.dll dist/
+          cp target/release/route-tracker-injector.exe dist/
+          cp route_tracker_config.toml dist/
+          cp src/WorldMapLegacyConvParam.csv dist/
 
-      - name: Upload injector artifact
+      - name: Upload distribution package
         uses: actions/upload-artifact@v4
         with:
-          name: route-tracker-injector.exe
-          path: target/release/route-tracker-injector.exe
+          name: route-tracker
+          path: dist/
           if-no-files-found: error
