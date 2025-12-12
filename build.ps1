@@ -4,6 +4,7 @@
 param(
     [switch]$Release,
     [switch]$Package,
+    [string]$Version = "0.1.0-alpha",
     [string]$OutputDir = "dist"
 )
 
@@ -11,6 +12,7 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "======================================" -ForegroundColor Cyan
 Write-Host "  Route Tracker - Build Script" -ForegroundColor Cyan
+Write-Host "  Version: $Version" -ForegroundColor Cyan
 Write-Host "======================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -80,13 +82,33 @@ if ($Package) {
         }
     }
     
+    # Create ZIP archive
+    $zipName = "ER_Route_Tracker_v$Version.zip"
+    $zipPath = Join-Path (Get-Location) $zipName
+    
+    Write-Host ""
+    Write-Host "[*] Creating ZIP archive: $zipName" -ForegroundColor White
+    
+    if (Test-Path $zipPath) {
+        Remove-Item $zipPath -Force
+    }
+    
+    Compress-Archive -Path "$OutputDir\*" -DestinationPath $zipPath -Force
+    
+    $zipSize = [math]::Round((Get-Item $zipPath).Length / 1MB, 2)
+    Write-Host "[+] ZIP created: $zipName ($zipSize MB)" -ForegroundColor Green
+    
     Write-Host ""
     Write-Host "[+] Package created in '$OutputDir' directory!" -ForegroundColor Green
     Write-Host ""
     Write-Host "Contents:" -ForegroundColor Cyan
     Get-ChildItem $OutputDir | ForEach-Object { Write-Host "  - $($_.Name)" }
+    
+    Write-Host ""
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host "  Release artifact: $zipName" -ForegroundColor Green
+    Write-Host "======================================" -ForegroundColor Cyan
 }
 
 Write-Host ""
 Write-Host "[+] Done!" -ForegroundColor Green
-
