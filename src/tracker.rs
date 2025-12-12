@@ -282,6 +282,7 @@ impl RouteTracker {
                 map_id_str,
                 timestamp_ms,
                 on_torrent,
+                cur_anim: current_anim,
                 torrent_debug,
             });
 

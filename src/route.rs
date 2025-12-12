@@ -35,6 +35,8 @@ pub struct RoutePoint {
     pub timestamp_ms: u64,
     /// Whether the player is riding Torrent
     pub on_torrent: bool,
+    /// Current animation ID (useful for identifying fog wall animations)
+    pub cur_anim: Option<u32>,
     /// Debug info for Torrent/riding state (to identify which values change)
     pub torrent_debug: TorrentDebugInfo,
 }
