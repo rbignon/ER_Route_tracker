@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use hudhook::tracing::{info, warn};
-use libeldenring::prelude::*;
+use libeldenring::pointers::Pointers;
 use windows::Win32::Foundation::HINSTANCE;
 
 use crate::config::Config;

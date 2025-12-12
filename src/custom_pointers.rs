@@ -3,8 +3,8 @@
 // These pointers were reverse-engineered from Cheat Engine tables
 // (eldenring_all-in-one_Hexinton-v5.0_ce7.5.ct)
 
-use libeldenring::prelude::*;
-use libeldenring::prelude::base_addresses::BaseAddresses;
+use libeldenring::memedit::PointerChain;
+use libeldenring::prelude::base_addresses::{BaseAddresses, Version};
 use libeldenring::version::get_version;
 
 /// Custom pointers for route tracking features
