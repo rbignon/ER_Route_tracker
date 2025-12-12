@@ -155,6 +155,10 @@ This project is based on the work of:
 - **johndisandonato** - [eldenring-practice-tool](https://github.com/veeenu/eldenring-practice-tool)
 - **veeenu** - [hudhook](https://github.com/veeenu/hudhook)
 
+### Tools
+
+- **Smithbox** - [vawser/Smithbox](https://github.com/vawser/Smithbox) - Essential modding tool for Elden Ring (Param Editor, Map Editor, etc.)
+
 ## Contributing
 
 Contributions are welcome! All contributed code will be licensed under AGPL-3.0.
